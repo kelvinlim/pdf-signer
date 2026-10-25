@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import SignaturePad from "./SignaturePad";
+import { loadSignature, revokeSignature, type Signature } from "./signature";
 import "./App.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -37,6 +39,35 @@ function App() {
   const [viewerWidth, setViewerWidth] = useState(0);
   const [scale, setScale] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const [signature, setSignature] = useState<Signature | null>(null);
+  const [padOpen, setPadOpen] = useState(false);
+
+  async function applySignature(bytes: Uint8Array) {
+    try {
+      const next = await loadSignature(bytes);
+      setSignature((prev) => {
+        revokeSignature(prev);
+        return next;
+      });
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function importSignature() {
+    const path = await open({
+      multiple: false,
+      filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg"] }],
+    });
+    if (!path) return;
+    try {
+      const bytes = await invoke<ArrayBuffer>("read_file", { path });
+      await applySignature(new Uint8Array(bytes));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
 
   async function openPdf() {
     const path = await open({
@@ -160,6 +191,12 @@ function App() {
             </button>
           </>
         )}
+        <span className="divider" />
+        <button onClick={importSignature}>Import signature…</button>
+        <button onClick={() => setPadOpen(true)}>Draw signature…</button>
+        {signature && (
+          <img className="sig-thumb" src={signature.url} alt="Current signature" />
+        )}
       </header>
       {error && (
         <p className="error" role="alert">
@@ -170,6 +207,15 @@ function App() {
         {!doc && !error && <p className="hint">Open a PDF to get started.</p>}
         <canvas ref={canvasRef} hidden={!doc} />
       </div>
+      {padOpen && (
+        <SignaturePad
+          onCancel={() => setPadOpen(false)}
+          onDone={(png) => {
+            setPadOpen(false);
+            void applySignature(png);
+          }}
+        />
+      )}
     </main>
   );
 }

@@ -80,3 +80,65 @@ canvas {
   background: #fff;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
 }
+
+.sig-thumb {
+  height: 28px;
+  max-width: 120px;
+  object-fit: contain;
+  /* Checkerboard so transparent PNGs are visibly transparent. */
+  background: repeating-conic-gradient(#e4e4e4 0% 25%, #fff 0% 50%) 50% / 12px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 3px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 16px 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+.modal h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.pad {
+  max-width: 100%;
+  height: auto !important;
+  aspect-ratio: 560 / 220;
+  border: 1px dashed #999;
+  border-radius: 4px;
+  background: #fff;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+button.primary {
+  background: #1a5fd0;
+  color: #fff;
+  border-color: #1a5fd0;
+}
+
+button.primary:disabled {
+  opacity: 0.5;
+}
