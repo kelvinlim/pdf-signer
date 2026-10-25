@@ -2,7 +2,7 @@ mod stamp;
 
 use std::{fs, io::Write, path::Path};
 
-use tauri::ipc::Response;
+use tauri::{ipc::{InvokeBody, Request, Response}, AppHandle, Manager};
 
 /// Read a file from disk and return its raw bytes to the webview.
 #[tauri::command]
@@ -48,12 +48,54 @@ fn save_stamped_pdf(
     write_atomically(Path::new(&dest_path), &stamped)
 }
 
+/// Where the last-used signature image is kept between launches.
+fn signature_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&dir).map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
+    Ok(dir.join("signature.img"))
+}
+
+/// The remembered signature's bytes, or an empty body if none is stored.
+#[tauri::command]
+fn load_saved_signature(app: AppHandle) -> Result<Response, String> {
+    match fs::read(signature_path(&app)?) {
+        Ok(bytes) => Ok(Response::new(bytes)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Response::new(Vec::new())),
+        Err(e) => Err(format!("Could not read the saved signature: {e}")),
+    }
+}
+
+/// Remember the signature image sent as the raw request body.
+#[tauri::command]
+fn store_signature(app: AppHandle, request: Request<'_>) -> Result<(), String> {
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Expected raw signature bytes.".into());
+    };
+    write_atomically(&signature_path(&app)?, bytes)
+}
+
+#[tauri::command]
+fn forget_signature(app: AppHandle) -> Result<(), String> {
+    match fs::remove_file(signature_path(&app)?) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(format!("Could not remove the saved signature: {e}"))
+        }
+        _ => Ok(()),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![read_file, save_stamped_pdf])
+        .invoke_handler(tauri::generate_handler![
+            read_file,
+            save_stamped_pdf,
+            load_saved_signature,
+            store_signature,
+            forget_signature
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -1,8 +1,8 @@
 # pdf-signer
 
-A local-only desktop app for signing PDFs with an image or drawn signature, in the spirit of Acrobat Reader's simple stamp flow. Files never leave your disk.
+A local-only desktop app for signing PDFs with an image or drawn signature, in the spirit of Acrobat Reader's simple stamp flow. Files never leave your disk (your last signature is kept in the app's local data folder).
 
-> **Status:** early development. You can open a PDF, import or draw a signature, place it on one page, and save the stamped PDF. Multiple stamps, undo and a remembered signature are still to come. See [SPEC.md](SPEC.md) for the full spec.
+> **Status:** early development. You can open a PDF, import or draw a signature, place it on one page, and save the stamped PDF. Your last signature is remembered between launches. Multiple stamps and undo are still to come. See [SPEC.md](SPEC.md) for the full spec.
 
 ## Features (phase 1)
 

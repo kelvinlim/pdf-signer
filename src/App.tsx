@@ -64,7 +64,8 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  async function applySignature(bytes: Uint8Array) {
+  /** Use `bytes` as the current signature; `remember` also keeps it for the next launch. */
+  async function applySignature(bytes: Uint8Array, remember = true) {
     try {
       const next = await loadSignature(bytes);
       setSignature((prev) => {
@@ -72,10 +73,44 @@ function App() {
         return next;
       });
       setError(null);
+      if (remember) {
+        try {
+          await invoke("store_signature", bytes);
+        } catch (e) {
+          setError(`Signature loaded, but could not be remembered: ${String(e)}`);
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   }
+
+  async function forgetSignature() {
+    try {
+      await invoke("forget_signature");
+    } catch (e) {
+      setError(String(e));
+      return;
+    }
+    setSignature((prev) => {
+      revokeSignature(prev);
+      return null;
+    });
+    setPlacement(null);
+  }
+
+  // Restore the last-used signature from the previous session.
+  useEffect(() => {
+    (async () => {
+      try {
+        const bytes = new Uint8Array(await invoke<ArrayBuffer>("load_saved_signature"));
+        if (bytes.length > 0) await applySignature(bytes, false);
+      } catch {
+        // A missing or unreadable remembered signature just means starting empty.
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function importSignature() {
     const path = await open({
@@ -324,6 +359,13 @@ function App() {
         {signature && (
           <>
             <img className="sig-thumb" src={signature.url} alt="Current signature" />
+            <button
+              aria-label="Forget saved signature"
+              title="Forget the saved signature"
+              onClick={() => void forgetSignature()}
+            >
+              ×
+            </button>
             <button disabled={!doc || !bounds} onClick={placeSignature}>
               {placement ? "Move to this page" : "Place on page"}
             </button>
