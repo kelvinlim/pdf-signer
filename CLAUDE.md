@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Phase 0 scaffold is in place: the app opens a PDF through a native dialog and renders the current page with PDF.js, with prev/next navigation. Everything else in [SPEC.md](SPEC.md) (signature import/draw, placement overlay, stamping, save prompt) is not built yet. The phased plan is: 1a open/preview, 1b signature sources, 1c placement overlay, 1d stamp and save, 1e polish, then phase 2 certificate signing.
+Phases 0 and 1a are in place: the app opens a PDF through a native dialog and renders the current page with PDF.js, with prev/next navigation, zoom in/out, fit-width (follows window resize), and error messages for password-protected or corrupt files. The canvas is rendered at device-pixel resolution but laid out in CSS pixels (`scale` = CSS px per PDF point), so the placement overlay can use CSS coordinates directly. Everything else in [SPEC.md](SPEC.md) (signature import/draw, placement overlay, stamping, save prompt) is not built yet. The phased plan is: 1a open/preview, 1b signature sources, 1c placement overlay, 1d stamp and save, 1e polish, then phase 2 certificate signing.
 
 ## What it is
 

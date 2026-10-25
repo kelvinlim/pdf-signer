@@ -4,25 +4,79 @@
   background: #ececec;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
 .app {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
+  height: 100%;
 }
 
 .toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 8px 12px;
+  background: #fafafa;
+  border-bottom: 1px solid #d0d0d0;
+}
+
+.toolbar .file-name {
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #555;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.divider {
+  width: 1px;
+  height: 20px;
+  background: #d0d0d0;
+}
+
+.zoom-label {
+  min-width: 4ch;
+  text-align: center;
+}
+
+button[aria-pressed="true"] {
+  background: #dce8ff;
 }
 
 .error {
+  margin: 0;
+  padding: 8px 12px;
   color: #b00020;
+  background: #fdecee;
+}
+
+.viewer {
+  flex: 1;
+  overflow: auto;
+  /* Stable gutter so a scrollbar appearing doesn't change fit-width and loop. */
+  scrollbar-gutter: stable;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.hint {
+  text-align: center;
+  color: #777;
 }
 
 canvas {
+  display: block;
+  margin: 0 auto;
   background: #fff;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
 }
