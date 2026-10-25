@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import PlacementOverlay from "./PlacementOverlay";
@@ -35,6 +35,15 @@ function describeLoadError(e: unknown): string {
   return `Could not open PDF: ${e instanceof Error ? e.message : String(e)}`;
 }
 
+/** The signature is stamped on exactly one page: the one it was placed on. */
+interface Placement {
+  page: number;
+  /** Displayed-page points (top-left origin); zoom-independent. */
+  rect: Rect;
+}
+
+type PageInfo = PageGeometry & { page: number };
+
 function App() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,9 +57,12 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [signature, setSignature] = useState<Signature | null>(null);
   const [padOpen, setPadOpen] = useState(false);
-  const [pageGeom, setPageGeom] = useState<PageGeometry | null>(null);
-  /** Pending placement in displayed-page points (top-left origin); zoom-independent. */
-  const [placement, setPlacement] = useState<Rect | null>(null);
+  const [pageGeom, setPageGeom] = useState<PageInfo | null>(null);
+  const [placement, setPlacement] = useState<Placement | null>(null);
+  const [sourcePath, setSourcePath] = useState<string | null>(null);
+  const [saveChoiceOpen, setSaveChoiceOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function applySignature(bytes: Uint8Array) {
     try {
@@ -79,6 +91,25 @@ function App() {
     }
   }
 
+  async function loadPdf(path: string) {
+    const bytes = await invoke<ArrayBuffer>("read_file", { path });
+    const task = pdfjs.getDocument({ data: new Uint8Array(bytes) });
+    let loaded: pdfjs.PDFDocumentProxy;
+    try {
+      loaded = await task.promise;
+    } catch (e) {
+      void task.destroy();
+      throw e;
+    }
+    // Keep the previous document on screen until the new one has loaded.
+    void loadingTaskRef.current?.destroy();
+    loadingTaskRef.current = task;
+    setDoc(loaded);
+    setSourcePath(path);
+    setFileName(path.split(/[\\/]/).pop() ?? path);
+    setPlacement(null);
+  }
+
   async function openPdf() {
     const path = await open({
       multiple: false,
@@ -86,25 +117,57 @@ function App() {
     });
     if (!path) return;
     setError(null);
+    setNotice(null);
     try {
-      const bytes = await invoke<ArrayBuffer>("read_file", { path });
-      const task = pdfjs.getDocument({ data: new Uint8Array(bytes) });
-      let loaded: pdfjs.PDFDocumentProxy;
-      try {
-        loaded = await task.promise;
-      } catch (e) {
-        void task.destroy();
-        throw e;
-      }
-      // Keep the previous document on screen until the new one has loaded.
-      void loadingTaskRef.current?.destroy();
-      loadingTaskRef.current = task;
-      setDoc(loaded);
-      setFileName(path.split(/[\\/]/).pop() ?? path);
+      await loadPdf(path);
       setPageNum(1);
-      setPlacement(null);
     } catch (e) {
       setError(describeLoadError(e));
+    }
+  }
+
+  /** `mode` is asked of the user on every save; there is no remembered default. */
+  async function saveSigned(mode: "new" | "overwrite") {
+    setSaveChoiceOpen(false);
+    if (!sourcePath || !signature || !placement || !pdfRect) return;
+
+    let dest: string | null = sourcePath;
+    if (mode === "new") {
+      const sep = sourcePath.includes("\\") ? "\\" : "/";
+      const dir = sourcePath.slice(0, sourcePath.lastIndexOf(sep) + 1);
+      const base = fileName.replace(/\.pdf$/i, "");
+      dest = await save({
+        defaultPath: `${dir}${base}-signed.pdf`,
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
+      });
+      if (!dest) return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await invoke("save_stamped_pdf", {
+        sourcePath,
+        destPath: dest,
+        stamps: [
+          {
+            page: placement.page,
+            x: pdfRect.x,
+            y: pdfRect.y,
+            width: pdfRect.width,
+            height: pdfRect.height,
+            rotation: pdfRect.rotation,
+            image: Array.from(signature.bytes),
+          },
+        ],
+      });
+      // Show the saved result so the user can see exactly what was written.
+      await loadPdf(dest);
+      setNotice(`Saved to ${dest}`);
+    } catch (e) {
+      setError(typeof e === "string" ? e : describeLoadError(e));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -132,7 +195,11 @@ function App() {
           ? Math.min(MAX_SCALE, Math.max(MIN_SCALE, (viewerWidth - PAGE_MARGIN * 2) / base.width))
           : zoom;
       setScale(next);
-      setPageGeom({ view: page.view as PageGeometry["view"], rotate: page.rotate });
+      setPageGeom({
+        page: pageNum,
+        view: page.view as PageGeometry["view"],
+        rotate: page.rotate,
+      });
 
       // Render at device resolution but lay out in CSS pixels, so overlays
       // can use CSS coordinates directly.
@@ -160,19 +227,24 @@ function App() {
     };
   }, [doc, pageNum, zoom, viewerWidth]);
 
-  const bounds = pageGeom ? displayedSize(pageGeom) : null;
+  // Geometry is set asynchronously after a page change; only trust it once it
+  // describes the page being shown.
+  const geom = pageGeom && pageGeom.page === pageNum ? pageGeom : null;
+  const bounds = geom ? displayedSize(geom) : null;
+  const onThisPage = placement?.page === pageNum;
 
   // Keep the placement inside the page (page sizes can differ between pages).
   const shown: Rect | null =
-    placement && bounds
+    placement && onThisPage && bounds
       ? (() => {
-          const width = Math.min(placement.width, bounds.width);
-          const height = Math.min(placement.height, bounds.height);
+          const r = placement.rect;
+          const width = Math.min(r.width, bounds.width);
+          const height = Math.min(r.height, bounds.height);
           return {
             width,
             height,
-            x: Math.min(Math.max(0, placement.x), bounds.width - width),
-            y: Math.min(Math.max(0, placement.y), bounds.height - height),
+            x: Math.min(Math.max(0, r.x), bounds.width - width),
+            y: Math.min(Math.max(0, r.y), bounds.height - height),
           };
         })()
       : null;
@@ -181,17 +253,21 @@ function App() {
     if (!signature || !bounds) return;
     const width = Math.min(bounds.width * 0.25, bounds.height * 0.5 * (signature.width / signature.height));
     const height = width * (signature.height / signature.width);
+    setNotice(null);
     setPlacement({
-      width,
-      height,
-      x: (bounds.width - width) / 2,
-      y: (bounds.height - height) / 2,
+      page: pageNum,
+      rect: {
+        width,
+        height,
+        x: (bounds.width - width) / 2,
+        y: (bounds.height - height) / 2,
+      },
     });
   }
 
   const pdfRect =
-    shown && pageGeom
-      ? screenRectToPdfRect(pageGeom, scale, {
+    shown && geom
+      ? screenRectToPdfRect(geom, scale, {
           x: shown.x * scale,
           y: shown.y * scale,
           width: shown.width * scale,
@@ -248,10 +324,17 @@ function App() {
         {signature && (
           <>
             <img className="sig-thumb" src={signature.url} alt="Current signature" />
-            <button disabled={!doc} onClick={placeSignature}>
-              {placement ? "Reset placement" : "Place on page"}
+            <button disabled={!doc || !bounds} onClick={placeSignature}>
+              {placement ? "Move to this page" : "Place on page"}
             </button>
             {placement && <button onClick={() => setPlacement(null)}>Remove</button>}
+            <button
+              className="primary"
+              disabled={!pdfRect || saving}
+              onClick={() => setSaveChoiceOpen(true)}
+            >
+              {saving ? "Saving…" : "Apply & Save…"}
+            </button>
           </>
         )}
       </header>
@@ -260,6 +343,7 @@ function App() {
           {error}
         </p>
       )}
+      {notice && <p className="notice">{notice}</p>}
       <div className="viewer" ref={viewerRef}>
         {!doc && !error && <p className="hint">Open a PDF to get started.</p>}
         <div className="page" hidden={!doc}>
@@ -270,17 +354,41 @@ function App() {
               rect={shown}
               scale={scale}
               bounds={bounds}
-              onChange={setPlacement}
+              onChange={(rect) => setPlacement({ page: pageNum, rect })}
             />
           )}
         </div>
       </div>
-      {pdfRect && (
+      {placement && !onThisPage && (
         <footer className="status">
-          Page {pageNum} · x {pdfRect.x.toFixed(1)} pt, y {pdfRect.y.toFixed(1)} pt ·{" "}
+          Signature is placed on page {placement.page} only.{" "}
+          <button onClick={() => setPageNum(placement.page)}>Go to page {placement.page}</button>
+        </footer>
+      )}
+      {pdfRect && placement && (
+        <footer className="status">
+          Will be stamped on page {placement.page} only · x {pdfRect.x.toFixed(1)} pt, y {pdfRect.y.toFixed(1)} pt ·{" "}
           {pdfRect.width.toFixed(1)} × {pdfRect.height.toFixed(1)} pt · Drag to move, corners to
           resize (Shift = free)
         </footer>
+      )}
+      {saveChoiceOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Save signed PDF">
+          <div className="modal">
+            <h2>Save signed PDF</h2>
+            <p>
+              The signature will be added to page {placement?.page} only. How do you want to save?
+            </p>
+            <div className="modal-actions">
+              <button onClick={() => setSaveChoiceOpen(false)}>Cancel</button>
+              <span className="spacer" />
+              <button onClick={() => void saveSigned("overwrite")}>Overwrite original</button>
+              <button className="primary" onClick={() => void saveSigned("new")}>
+                Save as new file…
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {padOpen && (
         <SignaturePad

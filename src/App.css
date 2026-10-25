@@ -185,3 +185,15 @@ button.primary:disabled {
   background: #fafafa;
   border-top: 1px solid #d0d0d0;
 }
+
+.notice {
+  margin: 0;
+  padding: 8px 12px;
+  color: #14532d;
+  background: #e6f4ea;
+  word-break: break-all;
+}
+
+.status button {
+  margin-left: 4px;
+}
