@@ -74,9 +74,14 @@ button[aria-pressed="true"] {
   color: #777;
 }
 
+.page {
+  position: relative;
+  width: max-content;
+  margin: 0 auto;
+}
+
 canvas {
   display: block;
-  margin: 0 auto;
   background: #fff;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
 }
@@ -141,4 +146,42 @@ button.primary {
 
 button.primary:disabled {
   opacity: 0.5;
+}
+
+.placement {
+  position: absolute;
+  outline: 1.5px dashed #1a5fd0;
+  cursor: move;
+  touch-action: none;
+}
+
+.placement img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  user-select: none;
+}
+
+.handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 1.5px solid #1a5fd0;
+  border-radius: 2px;
+  touch-action: none;
+}
+
+.handle-nw { left: -6px; top: -6px; cursor: nwse-resize; }
+.handle-ne { right: -6px; top: -6px; cursor: nesw-resize; }
+.handle-sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
+.handle-se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+
+.status {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  color: #444;
+  background: #fafafa;
+  border-top: 1px solid #d0d0d0;
 }

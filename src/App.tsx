@@ -3,7 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import PlacementOverlay from "./PlacementOverlay";
 import SignaturePad from "./SignaturePad";
+import {
+  displayedSize,
+  screenRectToPdfRect,
+  type PageGeometry,
+  type Rect,
+} from "./coords";
 import { loadSignature, revokeSignature, type Signature } from "./signature";
 import "./App.css";
 
@@ -41,6 +48,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [signature, setSignature] = useState<Signature | null>(null);
   const [padOpen, setPadOpen] = useState(false);
+  const [pageGeom, setPageGeom] = useState<PageGeometry | null>(null);
+  /** Pending placement in displayed-page points (top-left origin); zoom-independent. */
+  const [placement, setPlacement] = useState<Rect | null>(null);
 
   async function applySignature(bytes: Uint8Array) {
     try {
@@ -92,6 +102,7 @@ function App() {
       setDoc(loaded);
       setFileName(path.split(/[\\/]/).pop() ?? path);
       setPageNum(1);
+      setPlacement(null);
     } catch (e) {
       setError(describeLoadError(e));
     }
@@ -121,6 +132,7 @@ function App() {
           ? Math.min(MAX_SCALE, Math.max(MIN_SCALE, (viewerWidth - PAGE_MARGIN * 2) / base.width))
           : zoom;
       setScale(next);
+      setPageGeom({ view: page.view as PageGeometry["view"], rotate: page.rotate });
 
       // Render at device resolution but lay out in CSS pixels, so overlays
       // can use CSS coordinates directly.
@@ -147,6 +159,45 @@ function App() {
       task?.cancel();
     };
   }, [doc, pageNum, zoom, viewerWidth]);
+
+  const bounds = pageGeom ? displayedSize(pageGeom) : null;
+
+  // Keep the placement inside the page (page sizes can differ between pages).
+  const shown: Rect | null =
+    placement && bounds
+      ? (() => {
+          const width = Math.min(placement.width, bounds.width);
+          const height = Math.min(placement.height, bounds.height);
+          return {
+            width,
+            height,
+            x: Math.min(Math.max(0, placement.x), bounds.width - width),
+            y: Math.min(Math.max(0, placement.y), bounds.height - height),
+          };
+        })()
+      : null;
+
+  function placeSignature() {
+    if (!signature || !bounds) return;
+    const width = Math.min(bounds.width * 0.25, bounds.height * 0.5 * (signature.width / signature.height));
+    const height = width * (signature.height / signature.width);
+    setPlacement({
+      width,
+      height,
+      x: (bounds.width - width) / 2,
+      y: (bounds.height - height) / 2,
+    });
+  }
+
+  const pdfRect =
+    shown && pageGeom
+      ? screenRectToPdfRect(pageGeom, scale, {
+          x: shown.x * scale,
+          y: shown.y * scale,
+          width: shown.width * scale,
+          height: shown.height * scale,
+        })
+      : null;
 
   const clamp = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
   const zoomBy = (factor: number) => setZoom(clamp(scale * factor));
@@ -195,7 +246,13 @@ function App() {
         <button onClick={importSignature}>Import signature…</button>
         <button onClick={() => setPadOpen(true)}>Draw signature…</button>
         {signature && (
-          <img className="sig-thumb" src={signature.url} alt="Current signature" />
+          <>
+            <img className="sig-thumb" src={signature.url} alt="Current signature" />
+            <button disabled={!doc} onClick={placeSignature}>
+              {placement ? "Reset placement" : "Place on page"}
+            </button>
+            {placement && <button onClick={() => setPlacement(null)}>Remove</button>}
+          </>
         )}
       </header>
       {error && (
@@ -205,8 +262,26 @@ function App() {
       )}
       <div className="viewer" ref={viewerRef}>
         {!doc && !error && <p className="hint">Open a PDF to get started.</p>}
-        <canvas ref={canvasRef} hidden={!doc} />
+        <div className="page" hidden={!doc}>
+          <canvas ref={canvasRef} />
+          {signature && shown && bounds && (
+            <PlacementOverlay
+              url={signature.url}
+              rect={shown}
+              scale={scale}
+              bounds={bounds}
+              onChange={setPlacement}
+            />
+          )}
+        </div>
       </div>
+      {pdfRect && (
+        <footer className="status">
+          Page {pageNum} · x {pdfRect.x.toFixed(1)} pt, y {pdfRect.y.toFixed(1)} pt ·{" "}
+          {pdfRect.width.toFixed(1)} × {pdfRect.height.toFixed(1)} pt · Drag to move, corners to
+          resize (Shift = free)
+        </footer>
+      )}
       {padOpen && (
         <SignaturePad
           onCancel={() => setPadOpen(false)}

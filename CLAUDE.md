@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Phases 0, 1a and 1b are in place: the app opens a PDF through a native dialog and renders the current page with PDF.js, with prev/next navigation, zoom in/out, fit-width (follows window resize), and error messages for password-protected or corrupt files. The canvas is rendered at device-pixel resolution but laid out in CSS pixels (`scale` = CSS px per PDF point), so the placement overlay can use CSS coordinates directly. Signatures can be imported (PNG/JPG, type sniffed from magic bytes in `src/signature.ts`) or drawn in `src/SignaturePad.tsx` (strokes exported as a cropped, transparent 2x PNG); the current `Signature` (bytes, mime, object URL, pixel size) lives in `App` state. Everything else in [SPEC.md](SPEC.md) (placement overlay, stamping, save prompt) is not built yet. The phased plan is: 1a open/preview, 1b signature sources, 1c placement overlay, 1d stamp and save, 1e polish, then phase 2 certificate signing.
+Phases 0, 1a, 1b and 1c are in place: the app opens a PDF through a native dialog and renders the current page with PDF.js, with prev/next navigation, zoom in/out, fit-width (follows window resize), and error messages for password-protected or corrupt files. The canvas is rendered at device-pixel resolution but laid out in CSS pixels (`scale` = CSS px per PDF point), so the placement overlay can use CSS coordinates directly. Signatures can be imported (PNG/JPG, type sniffed from magic bytes in `src/signature.ts`) or drawn in `src/SignaturePad.tsx` (strokes exported as a cropped, transparent 2x PNG); the current `Signature` (bytes, mime, object URL, pixel size) lives in `App` state. The signature can be placed on the page with `src/PlacementOverlay.tsx` (drag to move, corner handles resize with aspect locked, Shift = free). The placement is held in `App` as a zoom-independent rect in displayed-page points (top-left origin) and converted to PDF user space by `screenRectToPdfRect` in `src/coords.ts` (handles zoom, `/Rotate`, CropBox offset; unit-tested in `src/coords.test.ts`). The resulting `PdfRect` carries the page `rotation`, which the stamper must compensate for so the image reads upright. Everything else in [SPEC.md](SPEC.md) (stamping, save prompt) is not built yet; the current placement is only shown in a footer readout. The phased plan is: 1a open/preview, 1b signature sources, 1c placement overlay, 1d stamp and save, 1e polish, then phase 2 certificate signing.
 
 ## What it is
 
@@ -19,7 +19,9 @@ Rust is installed via rustup; in a fresh shell run `. "$HOME/.cargo/env"` if `ca
 - `npx tsc --noEmit` — type-check the frontend
 - `cargo check` (from `src-tauri/`) — type-check the backend
 
-No test runner is configured yet. The plan calls for Vitest (coordinate mapping) and `cargo test` (stamping).
+- `npm test` — Vitest (currently the coordinate mapping); a single file: `npx vitest run src/coords.test.ts`
+
+`cargo test` for the stamping code is planned for phase 1d.
 
 ## Stack and layout
 
