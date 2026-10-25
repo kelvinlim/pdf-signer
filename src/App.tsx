@@ -35,11 +35,14 @@ function describeLoadError(e: unknown): string {
   return `Could not open PDF: ${e instanceof Error ? e.message : String(e)}`;
 }
 
-/** The signature is stamped on exactly one page: the one it was placed on. */
+/** One signature on one page. Each stamp is written to its own page only. */
 interface Placement {
+  id: number;
   page: number;
   /** Displayed-page points (top-left origin); zoom-independent. */
   rect: Rect;
+  /** The image this stamp uses, kept even if the current signature changes later. */
+  sig: Signature;
 }
 
 type PageInfo = PageGeometry & { page: number };
@@ -58,7 +61,10 @@ function App() {
   const [signature, setSignature] = useState<Signature | null>(null);
   const [padOpen, setPadOpen] = useState(false);
   const [pageGeom, setPageGeom] = useState<PageInfo | null>(null);
-  const [placement, setPlacement] = useState<Placement | null>(null);
+  const [placements, setPlacements] = useState<Placement[]>([]);
+  const nextPlacementId = useRef(1);
+  /** Every signature object with a live object URL, so unused ones can be released. */
+  const liveSignatures = useRef(new Set<Signature>());
   const [sourcePath, setSourcePath] = useState<string | null>(null);
   const [saveChoiceOpen, setSaveChoiceOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -68,10 +74,8 @@ function App() {
   async function applySignature(bytes: Uint8Array, remember = true) {
     try {
       const next = await loadSignature(bytes);
-      setSignature((prev) => {
-        revokeSignature(prev);
-        return next;
-      });
+      liveSignatures.current.add(next);
+      setSignature(next);
       setError(null);
       if (remember) {
         try {
@@ -92,12 +96,18 @@ function App() {
       setError(String(e));
       return;
     }
-    setSignature((prev) => {
-      revokeSignature(prev);
-      return null;
-    });
-    setPlacement(null);
+    setSignature(null);
   }
+
+  // Release object URLs for signatures that are neither current nor stamped.
+  useEffect(() => {
+    for (const sig of [...liveSignatures.current]) {
+      if (sig !== signature && !placements.some((p) => p.sig === sig)) {
+        revokeSignature(sig);
+        liveSignatures.current.delete(sig);
+      }
+    }
+  }, [signature, placements]);
 
   // Restore the last-used signature from the previous session.
   useEffect(() => {
@@ -142,7 +152,7 @@ function App() {
     setDoc(loaded);
     setSourcePath(path);
     setFileName(path.split(/[\\/]/).pop() ?? path);
-    setPlacement(null);
+    setPlacements([]);
   }
 
   async function openPdf() {
@@ -164,7 +174,7 @@ function App() {
   /** `mode` is asked of the user on every save; there is no remembered default. */
   async function saveSigned(mode: "new" | "overwrite") {
     setSaveChoiceOpen(false);
-    if (!sourcePath || !signature || !placement || !pdfRect) return;
+    if (!sourcePath || !doc || placements.length === 0) return;
 
     let dest: string | null = sourcePath;
     if (mode === "new") {
@@ -181,21 +191,27 @@ function App() {
     setSaving(true);
     setError(null);
     try {
-      await invoke("save_stamped_pdf", {
-        sourcePath,
-        destPath: dest,
-        stamps: [
-          {
-            page: placement.page,
-            x: pdfRect.x,
-            y: pdfRect.y,
-            width: pdfRect.width,
-            height: pdfRect.height,
-            rotation: pdfRect.rotation,
-            image: Array.from(signature.bytes),
-          },
-        ],
-      });
+      // Placements are in zoom-independent displayed points, so convert each
+      // with its own page's geometry at scale 1.
+      const stamps = [];
+      for (const p of placements) {
+        const page = await doc.getPage(p.page);
+        const r = screenRectToPdfRect(
+          { view: page.view as PageGeometry["view"], rotate: page.rotate },
+          1,
+          p.rect,
+        );
+        stamps.push({
+          page: p.page,
+          x: r.x,
+          y: r.y,
+          width: r.width,
+          height: r.height,
+          rotation: r.rotation,
+          image: Array.from(p.sig.bytes),
+        });
+      }
+      await invoke("save_stamped_pdf", { sourcePath, destPath: dest, stamps });
       // Show the saved result so the user can see exactly what was written.
       await loadPdf(dest);
       setNotice(`Saved to ${dest}`);
@@ -266,49 +282,53 @@ function App() {
   // describes the page being shown.
   const geom = pageGeom && pageGeom.page === pageNum ? pageGeom : null;
   const bounds = geom ? displayedSize(geom) : null;
-  const onThisPage = placement?.page === pageNum;
+  const pagePlacements = placements.filter((p) => p.page === pageNum);
 
-  // Keep the placement inside the page (page sizes can differ between pages).
-  const shown: Rect | null =
-    placement && onThisPage && bounds
-      ? (() => {
-          const r = placement.rect;
-          const width = Math.min(r.width, bounds.width);
-          const height = Math.min(r.height, bounds.height);
-          return {
-            width,
-            height,
-            x: Math.min(Math.max(0, r.x), bounds.width - width),
-            y: Math.min(Math.max(0, r.y), bounds.height - height),
-          };
-        })()
-      : null;
-
-  function placeSignature() {
+  function addPlacement() {
     if (!signature || !bounds) return;
     const width = Math.min(bounds.width * 0.25, bounds.height * 0.5 * (signature.width / signature.height));
     const height = width * (signature.height / signature.width);
+    // Nudge each new stamp on the same page so they don't hide one another.
+    const nudge = pagePlacements.length * 16;
     setNotice(null);
-    setPlacement({
-      page: pageNum,
-      rect: {
-        width,
-        height,
-        x: (bounds.width - width) / 2,
-        y: (bounds.height - height) / 2,
+    setPlacements((prev) => [
+      ...prev,
+      {
+        id: nextPlacementId.current++,
+        page: pageNum,
+        sig: signature,
+        rect: {
+          width,
+          height,
+          x: Math.min((bounds.width - width) / 2 + nudge, bounds.width - width),
+          y: Math.min((bounds.height - height) / 2 + nudge, bounds.height - height),
+        },
       },
-    });
+    ]);
   }
 
-  const pdfRect =
-    shown && geom
-      ? screenRectToPdfRect(geom, scale, {
-          x: shown.x * scale,
-          y: shown.y * scale,
-          width: shown.width * scale,
-          height: shown.height * scale,
-        })
-      : null;
+  const undo = () => setPlacements((prev) => prev.slice(0, -1));
+
+  // Ctrl/Cmd+Z undoes the last added signature.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !padOpen && !saveChoiceOpen) {
+        e.preventDefault();
+        setPlacements((prev) => prev.slice(0, -1));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [padOpen, saveChoiceOpen]);
+
+  /** Page numbers that will be stamped, with a count per page. */
+  const pageCounts = [
+    ...placements.reduce((m, p) => m.set(p.page, (m.get(p.page) ?? 0) + 1), new Map<number, number>()),
+  ].sort((a, b) => a[0] - b[0]);
+  const pageSummary = pageCounts
+    .map(([page, n]) => (n > 1 ? `page ${page} (×${n})` : `page ${page}`))
+    .join(", ");
+  const countLabel = placements.length === 1 ? "1 signature" : `${placements.length} signatures`;
 
   const clamp = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
   const zoomBy = (factor: number) => setZoom(clamp(scale * factor));
@@ -366,15 +386,16 @@ function App() {
             >
               ×
             </button>
-            <button disabled={!doc || !bounds} onClick={placeSignature}>
-              {placement ? "Move to this page" : "Place on page"}
+            <button disabled={!doc || !bounds} onClick={addPlacement}>
+              Add to this page
             </button>
-            {placement && <button onClick={() => setPlacement(null)}>Remove</button>}
-            <button
-              className="primary"
-              disabled={!pdfRect || saving}
-              onClick={() => setSaveChoiceOpen(true)}
-            >
+          </>
+        )}
+        {placements.length > 0 && (
+          <>
+            <button onClick={undo}>Undo</button>
+            <button onClick={() => setPlacements([])}>Remove all</button>
+            <button className="primary" disabled={saving} onClick={() => setSaveChoiceOpen(true)}>
               {saving ? "Saving…" : "Apply & Save…"}
             </button>
           </>
@@ -390,28 +411,25 @@ function App() {
         {!doc && !error && <p className="hint">Open a PDF to get started.</p>}
         <div className="page" hidden={!doc}>
           <canvas ref={canvasRef} />
-          {signature && shown && bounds && (
-            <PlacementOverlay
-              url={signature.url}
-              rect={shown}
-              scale={scale}
-              bounds={bounds}
-              onChange={(rect) => setPlacement({ page: pageNum, rect })}
-            />
-          )}
+          {bounds &&
+            pagePlacements.map((p) => (
+              <PlacementOverlay
+                key={p.id}
+                url={p.sig.url}
+                rect={p.rect}
+                scale={scale}
+                bounds={bounds}
+                onChange={(rect) =>
+                  setPlacements((prev) => prev.map((q) => (q.id === p.id ? { ...q, rect } : q)))
+                }
+              />
+            ))}
         </div>
       </div>
-      {placement && !onThisPage && (
+      {placements.length > 0 && (
         <footer className="status">
-          Signature is placed on page {placement.page} only.{" "}
-          <button onClick={() => setPageNum(placement.page)}>Go to page {placement.page}</button>
-        </footer>
-      )}
-      {pdfRect && placement && (
-        <footer className="status">
-          Will be stamped on page {placement.page} only · x {pdfRect.x.toFixed(1)} pt, y {pdfRect.y.toFixed(1)} pt ·{" "}
-          {pdfRect.width.toFixed(1)} × {pdfRect.height.toFixed(1)} pt · Drag to move, corners to
-          resize (Shift = free)
+          {countLabel} will be stamped: {pageSummary}. Drag to move, corners to resize (Shift =
+          free), Ctrl+Z to undo.
         </footer>
       )}
       {saveChoiceOpen && (
@@ -419,7 +437,8 @@ function App() {
           <div className="modal">
             <h2>Save signed PDF</h2>
             <p>
-              The signature will be added to page {placement?.page} only. How do you want to save?
+              {countLabel} will be added ({pageSummary}). Other pages are left unchanged. How do you
+              want to save?
             </p>
             <div className="modal-actions">
               <button onClick={() => setSaveChoiceOpen(false)}>Cancel</button>

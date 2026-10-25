@@ -155,3 +155,32 @@ fn dump_real_pdf_for_inspection() {
     let out = stamp_pdf(&pdf, &[stamp(1, 0, png(true))]).unwrap();
     std::fs::write(format!("{dir}/real.pdf"), out).unwrap();
 }
+
+#[test]
+fn stamps_several_signatures_across_pages_and_on_one_page() {
+    let stamps = [
+        stamp(1, 0, png(true)),
+        Stamp { x: 300.0, y: 300.0, ..stamp(1, 0, png(false)) },
+        stamp(2, 0, png(true)),
+    ];
+    let out = stamp_pdf(&sample_pdf(0), &stamps).unwrap();
+    let doc = Document::load_mem(&out).unwrap();
+    let pages = doc.get_pages();
+
+    let draws = |n: u32| {
+        let text = String::from_utf8_lossy(&doc.get_page_content(pages[&n])).to_string();
+        text.matches(" Do Q").count()
+    };
+    assert_eq!(draws(1), 2);
+    assert_eq!(draws(2), 1);
+
+    let xobject_names = |n: u32| -> Vec<String> {
+        let res = doc.get_dictionary(pages[&n]).unwrap().get(b"Resources").unwrap().as_dict().unwrap();
+        let xo = res.get(b"XObject").unwrap().as_dict().unwrap();
+        let mut names: Vec<String> = xo.iter().map(|(k, _)| String::from_utf8_lossy(k).into()).collect();
+        names.sort();
+        names
+    };
+    assert_eq!(xobject_names(1), ["PdfSignerIm1", "PdfSignerIm2"]);
+    assert_eq!(xobject_names(2), ["PdfSignerIm3"]);
+}
