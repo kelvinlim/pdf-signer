@@ -82,6 +82,37 @@ pdf-signer/
 - Prefer Rust crates or well-maintained PDF libs that support signing; document choice in README.
 - Still ask save new vs overwrite.
 
+Certificate signing is a real digital signature, not a stamp image.
+
+1. Load a PKCS#12 file (`.p12` / `.pfx`) containing a private key and certificate.
+2. Hash the PDF byte ranges that will be signed; sign that hash with the private key.
+3. Embed a PKCS#7 / CMS signature in a PDF signature dictionary.
+4. Optional: draw a visible appearance (name, date, logo) — decoration only; Acrobat validates the crypto, not the pixels.
+
+**Image stamp (phase 1):** paints pixels; easy to fake; no tamper detection.
+**Certificate sign (phase 2):** binds identity + integrity; Acrobat can verify and show validity UI.
+
+### Generating a test certificate (self-signed)
+
+For development only. Acrobat will show the signature but treat the cert as untrusted unless you install it as a trusted identity (or use a CA-issued cert).
+
+```bash
+# 1) Self-signed cert + private key
+openssl req -x509 -newkey rsa:2048 \
+  -keyout key.pem -out cert.pem -days 365 -nodes \
+  -subj "/CN=Kelvin Lim/O=OmniKog LLC/C=US"
+
+# 2) Pack into PKCS#12 (prompted for an export password)
+openssl pkcs12 -export -out signer.p12 \
+  -inkey key.pem -in cert.pem -name "Kelvin Lim"
+```
+
+App imports `signer.p12` + password. Never commit `key.pem`, `cert.pem`, or `signer.p12`.
+
+### Production certificates
+
+Buy or obtain from an org CA / DigiCert / GlobalSign (etc.). Those usually arrive as `.p12` / `.pfx` already. Prefer MIT-compatible PDF signing libraries; document the choice in the README.
+
 ## Suggested technical approach (implementer chooses; document in README)
 
 **Frontend**
