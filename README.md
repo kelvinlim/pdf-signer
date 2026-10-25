@@ -2,7 +2,7 @@
 
 A local-only desktop app for signing PDFs with an image or drawn signature, in the spirit of Acrobat Reader's simple stamp flow. Files never leave your disk (your last signature is kept in the app's local data folder).
 
-> **Status:** early development. You can open a PDF, import or draw a signature, place it on one page, and save the stamped PDF. Your last signature is remembered between launches. Multiple stamps and undo are still to come. See [SPEC.md](SPEC.md) for the full spec.
+> **Status:** early development. You can open a PDF, import or draw a signature, place it on one page, and save the stamped PDF. Your last signature is remembered between launches. You can add several signatures (each on its own page) and undo. See [SPEC.md](SPEC.md) for the full spec.
 
 ## Features (phase 1)
 
@@ -37,6 +37,10 @@ npm run tauri build   # production build
 npm test              # frontend tests (Vitest)
 (cd src-tauri && cargo test --lib)   # Rust tests
 ```
+
+## Releases
+
+GitHub Actions builds installers for macOS (Apple silicon), Windows (x64) and Linux (x64: `.deb`, `.rpm`, AppImage). Pushing a `v*` tag drafts a GitHub release with the installers attached; pull requests and manual runs upload them as workflow artifacts. macOS builds are signed and notarized when the `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`, `APPLE_API_ISSUER` and `APPLE_API_KEY_CONTENT` repository secrets are set, and unsigned otherwise.
 
 ## License
 
