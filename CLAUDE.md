@@ -25,7 +25,7 @@ Rust is installed via rustup; in a fresh shell run `. "$HOME/.cargo/env"` if `ca
 
 ## CI
 
-`.github/workflows/build.yml` (modeled on audio-compare's): a `test` job (frontend build, `npm test`, `cargo test --lib`) gates a `build` matrix for macos-arm, windows-x86_64 and linux-x86_64 using `tauri-apps/tauri-action`. Tags `v*` draft a GitHub release; other runs upload artifacts. macOS is signed and notarized only if the `APPLE_*` secrets (same set as audio-compare) exist, otherwise it builds unsigned. The workflow has not been run yet.
+`.github/workflows/build.yml` (modeled on audio-compare's): a `test` job (frontend build, `npm test`, `cargo test --lib`) gates a `build` matrix for macos-arm, windows-x86_64 and linux-x86_64 using `tauri-apps/tauri-action`. Tags `v*` draft a GitHub release; other runs upload artifacts. macOS is signed (Developer ID) and notarized with an App Store Connect API key only if the `APPLE_*` secrets (same six as audio-compare: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_CONTENT`) exist, otherwise it builds unsigned. All six are set in the repo and a manual run (2026-11-02) produced a signed, notarized, stapled DMG. The published v0.1.0 release predates the secrets, so it is unsigned.
 
 ## Stack and layout
 
