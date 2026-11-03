@@ -42,6 +42,28 @@ npm test              # frontend tests (Vitest)
 
 GitHub Actions builds installers for macOS (Apple silicon), Windows (x64) and Linux (x64: `.deb`, `.rpm`, AppImage). Pushing a `v*` tag drafts a GitHub release with the installers attached; pull requests and manual runs upload them as workflow artifacts. macOS builds are signed and notarized when the `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`, `APPLE_API_ISSUER` and `APPLE_API_KEY_CONTENT` repository secrets are set, and unsigned otherwise.
 
+### macOS signing and notarization
+
+Releases are signed with a **Developer ID Application** certificate and notarized with an App Store Connect API key. Both are needed; the Apple Development certificate is for local builds only.
+
+1. **Certificate.** In Keychain Access open *login* → *My Certificates*, right-click "Developer ID Application: <name> (<team id>)" → *Export…* as `.p12`, and choose a password (keep it in a password manager; GitHub cannot show a secret back). Check it with `openssl pkcs12 -legacy -in cert.p12 -noout` (the `-legacy` flag is needed with OpenSSL 3; a wrong password prints `Mac verify error`).
+2. **API key.** In App Store Connect → *Users and Access* → *Integrations* → *Team Keys*, create a key with Developer access and download the `AuthKey_<KEYID>.p8` (Apple allows one download). The page also shows the **Issuer ID**.
+3. **Repository secrets** (run from the repo; `gh secret set NAME` prompts so values stay out of shell history):
+
+   ```sh
+   base64 -i cert.p12 | gh secret set APPLE_CERTIFICATE
+   gh secret set APPLE_CERTIFICATE_PASSWORD
+   gh secret set APPLE_SIGNING_IDENTITY --body "Developer ID Application: <name> (<team id>)"
+   gh secret set APPLE_API_KEY --body "<KEYID>"
+   gh secret set APPLE_API_ISSUER --body "<issuer id>"
+   gh secret set APPLE_API_KEY_CONTENT < AuthKey_<KEYID>.p8
+   gh secret list   # all six should appear
+   ```
+
+4. **Build.** `gh workflow run build.yml` uploads a signed DMG as an artifact; pushing a `v*` tag drafts a release with it attached. The workflow notarizes and staples the DMG and runs `spctl` on it, so a green macOS job means Gatekeeper accepts it. If either `APPLE_CERTIFICATE` or `APPLE_API_KEY_CONTENT` is missing, the macOS job falls back to an unsigned build with a warning.
+
+For a local signed build: `APPLE_SIGNING_IDENTITY="Developer ID Application: <name> (<team id>)" npm run tauri build`. Never commit the `.p12` or `.p8` files. The same six secrets can be reused across repositories.
+
 ## License
 
 [MIT](LICENSE)
