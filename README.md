@@ -46,7 +46,7 @@ GitHub Actions builds installers for macOS (Apple silicon), Windows (x64) and Li
 
 The published DMG is **Apple silicon only** (`*_aarch64.dmg`). Intel Macs cannot run it.
 
-When the six `APPLE_*` secrets are set, CI signs with a Developer ID certificate, notarizes, and staples the DMG (v0.1.1 was). Gatekeeper should accept those builds with a normal double-click.
+When the six `APPLE_*` secrets are set, CI signs with a Developer ID certificate, notarizes, and staples the DMG (v0.1.1 and later). Gatekeeper should accept those builds with a normal double-click.
 
 A local `npm run tauri build` without those credentials produces an **unsigned** app. macOS then blocks the first launch. Open it without turning Gatekeeper off:
 
