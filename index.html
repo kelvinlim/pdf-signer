@@ -2,13 +2,40 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri + React + Typescript</title>
+    <title>PDF Signer</title>
   </head>
 
   <body>
     <div id="root"></div>
+    <!-- Classic script so a failed ES module still leaves a visible message. -->
+    <script>
+      (function () {
+        function show(msg) {
+          var el = document.getElementById("root");
+          if (!el || el.getAttribute("data-ready")) return;
+          el.setAttribute("data-ready", "error");
+          var p = document.createElement("p");
+          p.style.color = "#b00020";
+          p.textContent = "PDF Signer failed to start.";
+          var pre = document.createElement("pre");
+          pre.style.whiteSpace = "pre-wrap";
+          pre.textContent = String(msg);
+          var main = document.createElement("main");
+          main.style.fontFamily = "system-ui, sans-serif";
+          main.style.padding = "16px";
+          main.appendChild(p);
+          main.appendChild(pre);
+          el.replaceChildren(main);
+        }
+        window.addEventListener("error", function (ev) {
+          show((ev.error && ev.error.stack) || ev.message || "Unknown error");
+        });
+        window.addEventListener("unhandledrejection", function (ev) {
+          show(ev.reason);
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

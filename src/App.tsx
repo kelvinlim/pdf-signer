@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import * as pdfjs from "pdfjs-dist";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import PlacementOverlay from "./PlacementOverlay";
 import SignaturePad from "./SignaturePad";
 import {
@@ -12,9 +10,13 @@ import {
   type Rect,
 } from "./coords";
 import { loadSignature, revokeSignature, type Signature } from "./signature";
+import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import "./App.css";
 
-pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+/** Load PDF.js only when needed so a worker/MIME failure cannot blank the window. */
+function loadPdfjs() {
+  return import("./pdfjs");
+}
 
 const ZOOM_STEP = 1.25;
 const MIN_SCALE = 0.25;
@@ -50,8 +52,8 @@ type PageInfo = PageGeometry & { page: number };
 function App() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [doc, setDoc] = useState<pdfjs.PDFDocumentProxy | null>(null);
-  const loadingTaskRef = useRef<pdfjs.PDFDocumentLoadingTask | null>(null);
+  const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
+  const loadingTaskRef = useRef<PDFDocumentLoadingTask | null>(null);
   const [fileName, setFileName] = useState("");
   const [pageNum, setPageNum] = useState(1);
   const [zoom, setZoom] = useState<ZoomMode>("fit");
@@ -122,6 +124,16 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Warm the PDF engine after the shell has mounted. Failures show in the
+  // toolbar error row instead of leaving a blank native window.
+  useEffect(() => {
+    void loadPdfjs()
+      .then((engine) => engine.ready)
+      .catch((e) => {
+        setError(`Could not load the PDF engine: ${e instanceof Error ? e.message : String(e)}`);
+      });
+  }, []);
+
   async function importSignature() {
     const path = await open({
       multiple: false,
@@ -137,9 +149,10 @@ function App() {
   }
 
   async function loadPdf(path: string) {
+    const { getDocument } = await loadPdfjs();
     const bytes = await invoke<ArrayBuffer>("read_file", { path });
-    const task = pdfjs.getDocument({ data: new Uint8Array(bytes) });
-    let loaded: pdfjs.PDFDocumentProxy;
+    const task = await getDocument(new Uint8Array(bytes));
+    let loaded: PDFDocumentProxy;
     try {
       loaded = await task.promise;
     } catch (e) {
@@ -235,7 +248,7 @@ function App() {
   useEffect(() => {
     if (!doc || !canvasRef.current || viewerWidth === 0) return;
     const canvas = canvasRef.current;
-    let task: pdfjs.RenderTask | undefined;
+    let task: RenderTask | undefined;
     let cancelled = false;
     (async () => {
       const page = await doc.getPage(pageNum);
