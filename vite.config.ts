@@ -8,6 +8,11 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(() => ({
   plugins: [react()],
 
+  // Relative URLs so the bundle loads from Tauri's custom protocol
+  // (`tauri://localhost` on macOS/Linux). Absolute `/assets/...` paths 404 in
+  // WKWebView and show up as a blank native window.
+  base: "./",
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
@@ -28,5 +33,13 @@ export default defineConfig(() => ({
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
+  },
+  envPrefix: ["VITE_", "TAURI_ENV_*"],
+  build: {
+    // Tauri uses Chromium on Windows and WebKit on macOS and Linux.
+    target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari15",
+    minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
+    sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    chunkSizeWarningLimit: 2000,
   },
 }));

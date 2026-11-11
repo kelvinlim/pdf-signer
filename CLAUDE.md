@@ -37,7 +37,7 @@ Mirrors the sibling repo https://github.com/kelvinlim/audio-compare (layout/stac
 
 ## Architecture notes
 
-- The frontend reads PDF bytes through the `read_file` Rust command (returned as a raw `tauri::ipc::Response`, so it arrives as an `ArrayBuffer`) and hands them to PDF.js. The PDF.js worker is bundled via Vite's `?url` import in `src/App.tsx`.
+- The frontend reads PDF bytes through the `read_file` Rust command (returned as a raw `tauri::ipc::Response`, so it arrives as an `ArrayBuffer`) and hands them to PDF.js. PDF.js is loaded from `src/pdfjs.ts` (dynamically imported from `App.tsx`) so a failed engine load cannot blank the window. The worker is imported as a JS module, which sets `globalThis.pdfjsWorker` and uses PDF.js's fake-worker path — WKWebView cannot load a `.mjs` module worker from Tauri's asset protocol. Vite `base` is `./` so asset URLs resolve on `tauri://localhost`.
 - `stamp::stamp_pdf` is "bytes in, bytes out" so a phase 2 signing step can be appended after it.
 - Screen→PDF coordinate mapping is the subtle part: PDF page space is in points with origin **bottom-left**, while the preview is top-left pixels; account for zoom, page `/Rotate`, and CropBox vs MediaBox. Keep it a pure, unit-tested function.
 - The Rust PDF library must support embedding PNG **with transparency** (planned: `lopdf`, with the alpha channel written as a separate `/SMask` image; JPEG can use `DCTDecode`). Prefer MIT-compatible dependencies.

@@ -42,6 +42,23 @@ npm test              # frontend tests (Vitest)
 
 GitHub Actions builds installers for macOS (Apple silicon), Windows (x64) and Linux (x64: `.deb`, `.rpm`, AppImage). Pushing a `v*` tag drafts a GitHub release with the installers attached; pull requests and manual runs upload them as workflow artifacts. macOS builds are signed and notarized when the `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`, `APPLE_API_ISSUER` and `APPLE_API_KEY_CONTENT` repository secrets are set, and unsigned otherwise.
 
+### macOS
+
+The published DMG is **Apple silicon only** (`*_aarch64.dmg`). Intel Macs cannot run it.
+
+When the six `APPLE_*` secrets are set, CI signs with a Developer ID certificate, notarizes, and staples the DMG (v0.1.1 was). Gatekeeper should accept those builds with a normal double-click.
+
+A local `npm run tauri build` without those credentials produces an **unsigned** app. macOS then blocks the first launch. Open it without turning Gatekeeper off:
+
+1. Right-click **PDF Signer.app** → **Open** → **Open** again in the warning dialog, or
+2. Strip the quarantine flag from this copy of the app:
+
+```sh
+xattr -cr "/Applications/PDF Signer.app"
+```
+
+If you downloaded an unsigned build from a browser, quarantine can also sit on the `.dmg`; `xattr -cr` that file before opening it, or run the same command on the `.app` after copying it to `/Applications`.
+
 ### macOS signing and notarization
 
 Releases are signed with a **Developer ID Application** certificate and notarized with an App Store Connect API key. Both are needed; the Apple Development certificate is for local builds only.
