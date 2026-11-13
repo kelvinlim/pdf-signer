@@ -44,7 +44,7 @@ GitHub Actions builds installers for macOS (Apple silicon), Windows (x64) and Li
 
 ### macOS
 
-The published DMG is **Apple silicon only** (`*_aarch64.dmg`). Intel Macs cannot run it.
+The published DMG is **Apple silicon only** (`*_aarch64.dmg`). Intel Macs cannot run it. **macOS 13 Ventura or later** is required (WKWebView ≈ Safari 16.3).
 
 When the six `APPLE_*` secrets are set, CI signs with a Developer ID certificate, notarizes, and staples the DMG (v0.1.1 and later). Gatekeeper should accept those builds with a normal double-click.
 
@@ -80,6 +80,13 @@ Releases are signed with a **Developer ID Application** certificate and notarize
 4. **Build.** `gh workflow run build.yml` uploads a signed DMG as an artifact; pushing a `v*` tag drafts a release with it attached. The workflow notarizes and staples the DMG and runs `spctl` on it, so a green macOS job means Gatekeeper accepts it. If either `APPLE_CERTIFICATE` or `APPLE_API_KEY_CONTENT` is missing, the macOS job falls back to an unsigned build with a warning.
 
 For a local signed build: `APPLE_SIGNING_IDENTITY="Developer ID Application: <name> (<team id>)" npm run tauri build`. Never commit the `.p12` or `.p8` files. The same six secrets can be reused across repositories.
+
+## Known limits
+
+- **macOS 13 Ventura or later** (Apple silicon). PDF preview runs in WKWebView; Ventura 13.2.1 is ≈ Safari 16.3, which is the engine floor this app targets. macOS 12 Monterey is not supported.
+- Password-protected / encrypted PDFs cannot be opened.
+- Stamping rewrites the whole file, so existing digital signatures are invalidated.
+- The last drawn or imported signature is stored in the app data folder on this machine only.
 
 ## License
 
